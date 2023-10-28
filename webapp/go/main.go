@@ -457,12 +457,8 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 			return nil, err
 		}
 
-		pID, err := h.generateID()
-		if err != nil {
-			return nil, err
-		}
 		up := &UserPresent{
-			ID:             pID,
+			ID:             generateUniqueID(),
 			UserID:         userID,
 			SentAt:         requestAt,
 			ItemType:       np.ItemType,
