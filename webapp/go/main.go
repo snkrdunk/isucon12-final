@@ -445,6 +445,7 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 	}
 
 	obtainPresents := make([]*UserPresent, 0)
+	userPresentID := generateUniqueID()
 	for _, np := range normalPresents {
 		received := new(UserPresentAllReceivedHistory)
 		query = "SELECT * FROM user_present_all_received_history WHERE user_id=? AND present_all_id=?"
@@ -458,7 +459,7 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 		}
 
 		up := &UserPresent{
-			ID:             requestAt,
+			ID:             userPresentID + 1,
 			UserID:         userID,
 			SentAt:         requestAt,
 			ItemType:       np.ItemType,
