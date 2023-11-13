@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  AWS CloudFormation for ISUCON12 Final
+  AWS CloudFormation for ISUCON12 Final pprotein
 Resources:
   GetAvailabilityZoneFunctionExecutionRole:
     Type: AWS::IAM::Role
@@ -55,7 +55,7 @@ Resources:
   VPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: "192.168.0.0/16"
+      CidrBlock: "172.16.0.0/16"
       EnableDnsSupport: "true"
       EnableDnsHostnames: "true"
       InstanceTenancy: default
@@ -70,7 +70,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !GetAtt GetAvailabilityZone.ZoneName
-      CidrBlock: "192.168.0.0/24"
+      CidrBlock: "172.16.0.0/24"
       VpcId: !Ref VPC
       MapPublicIpOnLaunch: False
   RouteTable:
@@ -106,7 +106,16 @@ Resources:
           ToPort: "443"
           CidrIp: "0.0.0.0/0"
         - IpProtocol: -1
-          CidrIp: "192.168.0.0/24"
+          CidrIp: "172.16.0.0/24"
+  SecurityGroupPprotein:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for ISUCON12 Final pprotein
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 9000
+          ToPort: 9000
+          CidrIp: "0.0.0.0/0"
 
   InstanceRole:
     Type: AWS::IAM::Role
@@ -146,18 +155,19 @@ Resources:
   MyKeyPair:
     Type: "AWS::EC2::KeyPair"
     Properties:
-      KeyName: isucon12-quarify-cfn
+      KeyName: isucon12-pprotein-cfn
 
-  FinalInstance1:
+  PproteinInstance:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: ami-0ecfc02bf3af2d03e
       InstanceType: c5.large
       SecurityGroupIds:
         - !Ref SecurityGroup
+        - !Ref SecurityGroupPprotein
       SubnetId: !Ref Subnet
       KeyName: !Ref MyKeyPair
-      PrivateIpAddress: "192.168.0.11"
+      PrivateIpAddress: "172.16.0.11"
       IamInstanceProfile: !Ref InstanceProfile
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
@@ -166,81 +176,9 @@ Resources:
             VolumeType: gp3
       Tags:
         - Key: Name
-          Value: isucon12-final-1
-  FinalInstanceIP1:
+          Value: isucon12-pprotein
+  PproteinInstanceIP:
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
-      InstanceId: !Ref FinalInstance1
-  FinalInstance2:
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: ami-0ecfc02bf3af2d03e
-      InstanceType: c5.large
-      SecurityGroupIds:
-        - !Ref SecurityGroup
-      SubnetId: !Ref Subnet
-      KeyName: !Ref MyKeyPair
-      PrivateIpAddress: "192.168.0.12"
-      IamInstanceProfile: !Ref InstanceProfile
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeSize: 20
-            VolumeType: gp3
-      Tags:
-        - Key: Name
-          Value: isucon12-final-2
-  FinalInstanceIP2:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-      InstanceId: !Ref FinalInstance2
-  FinalInstance3:
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: ami-0ecfc02bf3af2d03e
-      InstanceType: c5.large
-      SecurityGroupIds:
-        - !Ref SecurityGroup
-      SubnetId: !Ref Subnet
-      KeyName: !Ref MyKeyPair
-      PrivateIpAddress: "192.168.0.13"
-      IamInstanceProfile: !Ref InstanceProfile
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeSize: 20
-            VolumeType: gp3
-      Tags:
-        - Key: Name
-          Value: isucon12-final-3
-  FinalInstanceIP3:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-      InstanceId: !Ref FinalInstance3
-  BenchmarkerInstance:
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: ami-0ecfc02bf3af2d03e
-      InstanceType: c5.xlarge
-      SecurityGroupIds:
-        - !Ref SecurityGroup
-      SubnetId: !Ref Subnet
-      KeyName: !Ref MyKeyPair
-      PrivateIpAddress: "192.168.0.16"
-      IamInstanceProfile: !Ref InstanceProfile
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeSize: 20
-            VolumeType: gp3
-      Tags:
-        - Key: Name
-          Value: isucon12-benchmarker
-  BenchmarkerInstanceIP:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-      InstanceId: !Ref BenchmarkerInstance
+      InstanceId: !Ref PproteinInstance
