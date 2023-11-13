@@ -26,10 +26,7 @@ import (
 )
 
 var mysqlHosts = []string{
-	"192.168.0.11",
 	"192.168.0.12",
-	"192.168.0.13",
-	"192.168.0.14",
 }
 
 var (
@@ -136,7 +133,7 @@ func main() {
 // connectDB DBに接続する
 func connectDB(host string, batch bool) (*sqlx.DB, error) {
 	dsn := fmt.Sprintf(
-		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=%s&multiStatements=%t",
+		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=%s&multiStatements=%t&interpolateParams=true",
 		getEnv("ISUCON_DB_USER", "isucon"),
 		getEnv("ISUCON_DB_PASSWORD", "isucon"),
 		host,
@@ -1507,7 +1504,7 @@ func (h *Handler) receivePresent(c echo.Context) error {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
-	q, args, err := sqlx.In("UPDATE user_presents SET deleted_at=?, updated_at=? WHERE id IN (?)", requestAt, requestAt, presentIDs)
+	q, args, err := sqlx.In("UPDATE user_presents SET deleted_at=?, updated_at=? WHERE user_id = ? AND id IN (?)", requestAt, requestAt, userID, presentIDs)
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
