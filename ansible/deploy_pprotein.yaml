@@ -1,0 +1,9 @@
+- hosts: pprotein
+  remote_user: ubuntu
+  tasks:
+    - import_role:
+        name: pprotein
+        tasks_from: build
+    - import_role:
+        name: pprotein
+        tasks_from: deploy

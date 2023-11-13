@@ -1,0 +1,12 @@
+- name: Restart pprotein
+  become: true
+  service:
+    name: pprotein
+    state: restarted
+  listen: restart_pprotein
+- name: Restart portforward
+  become: true
+  service:
+    name: pprotein-portforward
+    state: restarted
+  listen: restart_pprotein
