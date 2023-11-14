@@ -52,50 +52,11 @@ Resources:
     Properties:
       ServiceToken: !GetAtt GetAvailabilityZoneFunction.Arn
 
-  VPC:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: "172.16.0.0/16"
-      EnableDnsSupport: "true"
-      EnableDnsHostnames: "true"
-      InstanceTenancy: default
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-  InternetGatewayAttachment:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties:
-      InternetGatewayId: !Ref InternetGateway
-      VpcId: !Ref VPC
-  Subnet:
-    Type: AWS::EC2::Subnet
-    Properties:
-      AvailabilityZone: !GetAtt GetAvailabilityZone.ZoneName
-      CidrBlock: "172.16.0.0/24"
-      VpcId: !Ref VPC
-      MapPublicIpOnLaunch: False
-  RouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-  Route:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref RouteTable
-      DestinationCidrBlock: "0.0.0.0/0"
-      GatewayId: !Ref InternetGateway
-  SubnetRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref Subnet
-      RouteTableId: !Ref RouteTable
-    DependsOn:
-      - Subnet
-      - RouteTable
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      VpcId: !Ref VPC
-      GroupDescription: Security Group for ISUCON12 Final
+      VpcId: vpc-0fd2ecf09b2284cae
+      GroupDescription: Security Group for ISUCON12 Final pprotein
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: "22"
@@ -106,12 +67,7 @@ Resources:
           ToPort: "443"
           CidrIp: "0.0.0.0/0"
         - IpProtocol: -1
-          CidrIp: "172.16.0.0/24"
-  SecurityGroupPprotein:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security Group for ISUCON12 Final pprotein
-      SecurityGroupIngress:
+          CidrIp: "192.168.0.0/24"
         - IpProtocol: tcp
           FromPort: 9000
           ToPort: 9000
@@ -152,11 +108,6 @@ Resources:
       Roles:
         - !Ref InstanceRole
 
-  MyKeyPair:
-    Type: "AWS::EC2::KeyPair"
-    Properties:
-      KeyName: isucon12-pprotein-cfn
-
   PproteinInstance:
     Type: AWS::EC2::Instance
     Properties:
@@ -164,10 +115,9 @@ Resources:
       InstanceType: c5.large
       SecurityGroupIds:
         - !Ref SecurityGroup
-        - !Ref SecurityGroupPprotein
-      SubnetId: !Ref Subnet
-      KeyName: !Ref MyKeyPair
-      PrivateIpAddress: "172.16.0.11"
+      SubnetId: subnet-086fb6c2fbcf62457
+      KeyName: isucon12-quarify-cfn	
+      PrivateIpAddress: "192.168.0.14"
       IamInstanceProfile: !Ref InstanceProfile
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
