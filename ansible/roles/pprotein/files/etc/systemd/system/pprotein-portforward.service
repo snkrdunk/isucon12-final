@@ -2,7 +2,7 @@
 Description=pprotein portforward
 
 [Service]
-ExecStart=/usr/bin/ssh isucon@192.168.0.11 -NL 6060:localhost:6060
+ExecStart=/usr/bin/ssh isucon@192.168.0.11 -NL 8080:localhost:8080
 Restart=always
 RestartSec=15
 User=isucon

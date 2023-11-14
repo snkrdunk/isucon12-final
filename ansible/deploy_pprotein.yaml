@@ -2,6 +2,9 @@
   remote_user: ubuntu
   tasks:
     - import_role:
+        name: alp
+        tasks_from: install
+    - import_role:
         name: pprotein
         tasks_from: build
     - import_role:

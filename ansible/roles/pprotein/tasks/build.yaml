@@ -1,7 +1,16 @@
+- name: Install dependencies
+  become: true
+  apt:
+    name: "{{ item }}"
+    state: present
+    update_cache: true
+  with_items:
+    - graphviz
+    - gv
 - name: Clone pprotein
   become: true
   git:
-    repo: https://github.com/kaz/pprotein.git
+    repo: https://github.com/rinchsan/pprotein.git
     dest: /home/isucon/pprotein
 - name: Build pprotein
   become: true
