@@ -4,9 +4,9 @@
     name: pprotein
     state: restarted
   listen: restart_pprotein
-- name: Restart portforward
+- name: Restart pprotein-agent
   become: true
   service:
-    name: pprotein-portforward
+    name: pprotein-agent
     state: restarted
-  listen: restart_pprotein
+  listen: restart_pprotein_agent

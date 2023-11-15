@@ -3,9 +3,3 @@
   copy:
     src: etc/systemd/system/pprotein.service
     dest: /etc/systemd/system/pprotein.service
-- name: Deploy pprotein-portforward.service
-  become: true
-  copy:
-    src: etc/systemd/system/pprotein-portforward.service
-    dest: /etc/systemd/system/pprotein-portforward.service
-  notify: restart_pprotein

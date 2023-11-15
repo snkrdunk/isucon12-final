@@ -1,0 +1,9 @@
+- hosts: db
+  remote_user: ubuntu
+  tasks:
+    - import_role:
+        name: pprotein
+        tasks_from: build-agent
+    - import_role:
+        name: pprotein
+        tasks_from: deploy-agent
