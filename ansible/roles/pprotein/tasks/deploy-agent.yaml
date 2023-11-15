@@ -1,0 +1,6 @@
+- name: Deploy pprotein-agent.service
+  become: true
+  copy:
+    src: etc/systemd/system/pprotein-agent.service
+    dest: /etc/systemd/system/pprotein-agent.service
+  notify: restart_pprotein_agent

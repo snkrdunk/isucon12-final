@@ -1,0 +1,11 @@
+[Unit]
+Description=pprotein service
+
+[Service]
+ExecStart=/home/isucon/pprotein/pprotein
+WorkingDirectory=/home/isucon/pprotein
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target

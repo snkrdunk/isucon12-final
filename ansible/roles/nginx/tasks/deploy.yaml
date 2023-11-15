@@ -11,3 +11,8 @@
   with_items:
     - etc/nginx/nginx.conf
     - etc/nginx/sites-available/isuconquest.conf
+- name: Change access.log permission
+  become: true
+  file:
+    path: /var/log/nginx/access.log
+    mode: 0644

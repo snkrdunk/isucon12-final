@@ -4,13 +4,25 @@
     src: ../webapp/go/isuconquest
     dest: /home/isucon/webapp/go/
   notify: restart_webapp
+- name: Deploy shell files
+  become: true
+  copy:
+    src: "{{ item }}"
+    dest: /home/isucon/webapp/sql/
+    owner: isucon
+    group: isucon
+    mode: 0755
+  with_fileglob:
+    - "../webapp/sql/init.sh"
 - name: Deploy sql files
   become: true
   copy:
     src: "{{ item }}"
     dest: /home/isucon/webapp/sql/
+    owner: isucon
+    group: isucon
+    mode: 0644
   with_fileglob:
-    - "../webapp/sql/init.sh"
     - "../webapp/sql/3_schema_exclude_user_presents.sql"
     - "../webapp/sql/4_alldata_exclude_user_presents*"
     - "../webapp/sql/5_user_presents_not_receive_data*"

@@ -1,0 +1,12 @@
+- name: Restart pprotein
+  become: true
+  service:
+    name: pprotein
+    state: restarted
+  listen: restart_pprotein
+- name: Restart pprotein-agent
+  become: true
+  service:
+    name: pprotein-agent
+    state: restarted
+  listen: restart_pprotein_agent

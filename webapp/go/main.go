@@ -19,6 +19,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/kaz/pprotein/integration/echov4"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/pkg/errors"
@@ -26,10 +27,8 @@ import (
 )
 
 var mysqlHosts = []string{
-	"192.168.0.11",
 	"192.168.0.12",
 	"192.168.0.13",
-	"192.168.0.14",
 }
 
 var (
@@ -99,6 +98,8 @@ func main() {
 	}
 
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{}))
+
+	echov4.EnableDebugHandler(e)
 
 	// utility
 	e.POST("/initialize", initialize)

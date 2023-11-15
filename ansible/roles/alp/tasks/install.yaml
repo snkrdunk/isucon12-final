@@ -1,0 +1,17 @@
+- name: Install unzip
+  become: true
+  apt:
+    name: unzip
+    state: present
+    update_cache: true
+- name: Install alp
+  become: true
+  environment:
+    PATH: "{{ ansible_env.PATH }}:/usr/bin:/home/isucon/local/node/bin:/home/isucon/local/golang/bin"
+  shell:
+    chdir: /home/isucon/
+    cmd: "{{ item }}"
+  with_items:
+    - "wget https://github.com/tkuchiki/alp/releases/download/v1.0.12/alp_linux_amd64.zip"
+    - "unzip alp_linux_amd64.zip"
+    - "mv ./alp /usr/local/bin/alp"
