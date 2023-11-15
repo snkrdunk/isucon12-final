@@ -55,7 +55,7 @@ Resources:
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      VpcId: vpc-0fd2ecf09b2284cae
+      VpcId: vpc-0fe510ab67cf6bf3e
       GroupDescription: Security Group for ISUCON12 Final pprotein
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -115,7 +115,7 @@ Resources:
       InstanceType: c5.large
       SecurityGroupIds:
         - !Ref SecurityGroup
-      SubnetId: subnet-086fb6c2fbcf62457
+      SubnetId: subnet-061363c47973127c0
       KeyName: isucon12-quarify-cfn	
       PrivateIpAddress: "192.168.0.14"
       IamInstanceProfile: !Ref InstanceProfile

@@ -3,25 +3,25 @@ all:
     bench:
       hosts:
         bench01:
-          ansible_host: 35.72.249.173
+          ansible_host: 18.182.154.8
     nginx:
       hosts:
         nginx01:
-          ansible_host: 57.180.157.29
+          ansible_host: 57.180.209.234
     webapp:
       hosts:
         webapp01:
-          ansible_host: 57.180.157.29
+          ansible_host: 57.180.209.234
     db:
       hosts:
         db01:
-          ansible_host: 18.177.245.189
+          ansible_host: 13.115.193.162
         db02:
-          ansible_host: 54.65.64.205
+          ansible_host: 13.114.196.82
     pprotein:
       hosts:
         pprotein01:
-          ansible_host: 54.248.234.149
+          ansible_host: 35.72.48.81
     # memcached:
       # hosts:
         # memcached01:
