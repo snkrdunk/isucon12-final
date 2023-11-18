@@ -220,6 +220,54 @@ Resources:
     Properties:
       Domain: vpc
       InstanceId: !Ref FinalInstance3
+  FinalInstance4:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0ecfc02bf3af2d03e
+      InstanceType: c5.large
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      SubnetId: !Ref Subnet
+      KeyName: !Ref MyKeyPair
+      PrivateIpAddress: "192.168.0.14"
+      IamInstanceProfile: !Ref InstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: isucon12-final-4
+  FinalInstanceIP4:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref FinalInstance4
+  FinalInstance5:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0ecfc02bf3af2d03e
+      InstanceType: c5.large
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      SubnetId: !Ref Subnet
+      KeyName: !Ref MyKeyPair
+      PrivateIpAddress: "192.168.0.15"
+      IamInstanceProfile: !Ref InstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: isucon12-final-5
+  FinalInstanceIP5:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref FinalInstance5
   BenchmarkerInstance:
     Type: AWS::EC2::Instance
     Properties:
