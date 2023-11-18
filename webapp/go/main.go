@@ -2,21 +2,20 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/kaz/pprotein/integration/echov4"
@@ -56,24 +55,179 @@ const (
 )
 
 type Handler struct {
-	DBs []*sqlx.DB
+	DBs              []*sqlx.DB
+	Sessions         sync.Map
+	GachaItemMasters sync.Map
 }
 
-func (h Handler) db(userID int64) *sqlx.DB {
+func (h *Handler) db(userID int64) *sqlx.DB {
 	return h.DBs[int(userID)%len(h.DBs)]
 }
 
-func main() {
-	runtime.SetBlockProfileRate(1)
-	runtime.SetMutexProfileFraction(1)
-	go func() {
-		log.Fatal(http.ListenAndServe("localhost:6060", nil))
-	}()
+func (h *Handler) getSession(sessID string) (*Session, error) {
+	v, ok := h.Sessions.Load(sessID)
+	if !ok {
+		query := "SELECT * FROM user_sessions WHERE session_id=? AND deleted_at IS NULL"
+		userSession := new(Session)
+		var eg errgroup.Group
+		for _, db := range h.DBs {
+			db := db
+			eg.Go(func() error {
+				userSessionTmp := new(Session)
+				if err := db.Get(userSessionTmp, query, sessID); err != nil && err != sql.ErrNoRows {
+					return err
+				}
+				if userSessionTmp.ID > 0 {
+					userSession = userSessionTmp
+				}
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
+		if userSession.ID == 0 {
+			return nil, nil
+		}
+		h.setSession(sessID, userSession)
+		return userSession, nil
+	}
+	session, ok := v.(*Session)
+	if !ok {
+		return nil, nil
+	}
+	return session, nil
+}
 
+func (h *Handler) setSession(sessID string, session *Session) {
+	h.Sessions.Store(sessID, session)
+}
+
+func (h *Handler) deleteSession(sessID string) {
+	h.Sessions.Delete(sessID)
+}
+
+func (h *Handler) getSessionByUserID(userID int64) (*Session, error) {
+	var session *Session
+	h.Sessions.Range(func(key, value any) bool {
+		v, ok := value.(*Session)
+		if !ok {
+			return true
+		}
+		if v.UserID != userID {
+			return true
+		}
+		session = v
+		return false
+	})
+	if session != nil {
+		return session, nil
+	}
+
+	userSession := new(Session)
+	query := "SELECT * FROM user_sessions WHERE user_id=? AND deleted_at IS NULL"
+	var eg errgroup.Group
+	for _, db := range h.DBs {
+		db := db
+		eg.Go(func() error {
+			userSessionTmp := new(Session)
+			if err := db.Get(userSessionTmp, query, userID); err != nil && err != sql.ErrNoRows {
+				return err
+			}
+			if userSessionTmp.ID > 0 {
+				userSession = userSessionTmp
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	if userSession.ID == 0 {
+		return nil, nil
+	}
+	h.setSession(userSession.SessionID, userSession)
+	return userSession, nil
+}
+
+func (h *Handler) getGachaItemMasters(gachaID int64) ([]*GachaItemMaster, error) {
+	v, ok := h.GachaItemMasters.Load(gachaID)
+	if ok {
+		gachaItemMasters, ok := v.([]*GachaItemMaster)
+		if !ok {
+			return nil, nil
+		}
+		return gachaItemMasters, nil
+	}
+
+	query := "SELECT * FROM gacha_item_masters WHERE gacha_id=? ORDER BY id ASC"
+	gachaItemMasters := make([]*GachaItemMaster, 0)
+	if err := h.db(0).Select(&gachaItemMasters, query, gachaID); err != nil {
+		return nil, err
+	}
+	h.GachaItemMasters.Store(gachaID, gachaItemMasters)
+	return gachaItemMasters, nil
+}
+
+func (h *Handler) refreshGachaItemMasters() error {
+	query := "SELECT * FROM gacha_item_masters ORDER BY id ASC"
+	gachaItemMasters := make([]*GachaItemMaster, 0)
+	if err := h.db(0).Select(&gachaItemMasters, query); err != nil {
+		return err
+	}
+	gachaItemMasterMap := map[int64][]*GachaItemMaster{}
+	for _, v := range gachaItemMasters {
+		gachaItemMasterMap[v.GachaID] = append(gachaItemMasterMap[v.GachaID], v)
+	}
+	for k, v := range gachaItemMasterMap {
+		h.GachaItemMasters.Store(k, v)
+	}
+	return nil
+}
+
+func (h *Handler) getWeightSumOfGachaItemMasters(gachaID int64) (int64, error) {
+	gachaItemMasters, err := h.getGachaItemMasters(gachaID)
+	if err != nil {
+		return 0, err
+	}
+	var sum int
+	for _, v := range gachaItemMasters {
+		sum += v.Weight
+	}
+	return int64(sum), nil
+}
+
+type JSONSerializer struct{}
+
+func (j *JSONSerializer) Serialize(c echo.Context, i interface{}, indent string) error {
+	return json.NewEncoder(c.Response()).Encode(i)
+}
+
+func (j *JSONSerializer) Deserialize(c echo.Context, i interface{}) error {
+	err := json.NewDecoder(c.Request().Body).Decode(i)
+	if ute, ok := err.(*json.UnmarshalTypeError); ok {
+		return echo.NewHTTPError(
+			http.StatusBadRequest,
+			fmt.Sprintf(
+				"Unmarshal type error: expected=%v, got=%v, field=%v, offset=%v",
+				ute.Type, ute.Value, ute.Field, ute.Offset),
+		).SetInternal(err)
+	} else if se, ok := err.(*json.SyntaxError); ok {
+		return echo.NewHTTPError(
+			http.StatusBadRequest,
+			fmt.Sprintf("Syntax error: offset=%v, error=%v",
+				se.Offset, se.Error()),
+		).SetInternal(err)
+	}
+	return err
+}
+
+func main() {
 	rand.Seed(time.Now().UnixNano())
 	time.Local = time.FixedZone("Local", 9*60*60)
 
 	e := echo.New()
+	e.JSONSerializer = &JSONSerializer{}
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
@@ -227,30 +381,20 @@ func (h *Handler) checkSessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc
 			return errorResponse(c, http.StatusInternalServerError, ErrGetRequestTime)
 		}
 
-		userSession := new(Session)
-		query := "SELECT * FROM user_sessions WHERE session_id=? AND deleted_at IS NULL"
-		for _, db := range h.DBs {
-			if err := db.Get(userSession, query, sessID); err != nil && err != sql.ErrNoRows {
-				return errorResponse(c, http.StatusInternalServerError, err)
-			}
-			if userSession.ID > 0 {
-				break
-			}
+		userSession, err := h.getSession(sessID)
+		if err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
 		}
-		if userSession.ID == 0 {
+		if userSession == nil {
 			return errorResponse(c, http.StatusUnauthorized, ErrUnauthorized)
 		}
-
 		if userSession.UserID != userID {
 			return errorResponse(c, http.StatusForbidden, ErrForbidden)
 		}
 
 		// 期限切れチェック
 		if userSession.ExpiredAt < requestAt {
-			query = "UPDATE user_sessions SET deleted_at=? WHERE session_id=?"
-			if _, err = h.db(userID).Exec(query, requestAt, sessID); err != nil {
-				return errorResponse(c, http.StatusInternalServerError, err)
-			}
+			h.deleteSession(sessID)
 			return errorResponse(c, http.StatusUnauthorized, ErrExpiredSession)
 		}
 
@@ -481,7 +625,7 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 	}
 
 	userPresents := make([]*UserPresent, 0, len(normalPresents))
-	UserPresentAllReceivedHistories := make([]*UserPresentAllReceivedHistory, 0, len(normalPresents))
+	userPresentAllReceivedHistories := make([]*UserPresentAllReceivedHistory, 0, len(normalPresents))
 	for _, np := range normalPresents {
 		if isReceived(receivedHistories, np.ID) {
 			continue
@@ -508,7 +652,7 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 			CreatedAt:    requestAt,
 			UpdatedAt:    requestAt,
 		}
-		UserPresentAllReceivedHistories = append(UserPresentAllReceivedHistories, history)
+		userPresentAllReceivedHistories = append(userPresentAllReceivedHistories, history)
 	}
 
 	// NOTE: user_presents
@@ -517,7 +661,7 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 	}
 
 	// NOTE: user_present_all_received_history
-	if err := bulkInsertUserPresentHistories(tx, UserPresentAllReceivedHistories); err != nil {
+	if err := bulkInsertUserPresentHistories(tx, userPresentAllReceivedHistories); err != nil {
 		return nil, err
 	}
 
@@ -969,10 +1113,7 @@ func (h *Handler) createUser(c echo.Context) error {
 		UpdatedAt: requestAt,
 		ExpiredAt: requestAt + 86400,
 	}
-	query = "INSERT INTO user_sessions(id, user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?)"
-	if _, err = tx.Exec(query, sess.ID, sess.UserID, sess.SessionID, sess.CreatedAt, sess.UpdatedAt, sess.ExpiredAt); err != nil {
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
+	h.setSession(sess.SessionID, sess)
 
 	err = tx.Commit()
 	if err != nil {
@@ -1046,29 +1187,20 @@ func (h *Handler) login(c echo.Context) error {
 	defer tx.Rollback() //nolint:errcheck
 
 	var sessionID string
-	userSession := new(Session)
-	query = "SELECT * FROM user_sessions WHERE user_id=? AND deleted_at IS NULL"
-	if err := h.db(user.ID).Get(userSession, query, user.ID); err != nil {
-		if err != sql.ErrNoRows {
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
+	userSession, err := h.getSessionByUserID(user.ID)
+	if err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
 	}
-	if userSession.ID != 0 {
-		if userSession.UserID != user.ID {
-			return errorResponse(c, http.StatusForbidden, ErrForbidden)
-		}
+	if userSession != nil && userSession.UserID != user.ID {
+		return errorResponse(c, http.StatusForbidden, ErrForbidden)
 	}
 
 	// NOTE: セッションの有効期限切れチェック
-	if userSession.ExpiredAt > requestAt {
+	if userSession != nil && userSession.ExpiredAt > requestAt {
 		sessionID = userSession.SessionID
 	}
 
 	if sessionID == "" {
-		query = "UPDATE user_sessions SET deleted_at=? WHERE user_id=? AND deleted_at IS NULL"
-		if _, err = tx.Exec(query, requestAt, req.UserID); err != nil {
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
 		sessID, err := generateUUID()
 		if err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
@@ -1082,10 +1214,7 @@ func (h *Handler) login(c echo.Context) error {
 			UpdatedAt: requestAt,
 			ExpiredAt: requestAt + 86400,
 		}
-		query = "INSERT INTO user_sessions(id, user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?)"
-		if _, err = tx.Exec(query, sess.ID, sess.UserID, sess.SessionID, sess.CreatedAt, sess.UpdatedAt, sess.ExpiredAt); err != nil {
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
+		h.setSession(sessID, sess)
 	}
 
 	// 同日にすでにログインしているユーザはログイン処理をしない
@@ -1171,10 +1300,8 @@ func (h *Handler) listGacha(c echo.Context) error {
 	}
 
 	gachaDataList := make([]*GachaData, 0)
-	query = "SELECT * FROM gacha_item_masters WHERE gacha_id=? ORDER BY id ASC"
 	for _, v := range gachaMasterList {
-		var gachaItem []*GachaItemMaster
-		err = h.db(userID).Select(&gachaItem, query, v.ID)
+		gachaItem, err := h.getGachaItemMasters(v.ID)
 		if err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
 		}
@@ -1297,8 +1424,11 @@ func (h *Handler) drawGacha(c echo.Context) error {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
-	gachaItemList := make([]*GachaItemMaster, 0)
-	err = h.db(userID).Select(&gachaItemList, "SELECT * FROM gacha_item_masters WHERE gacha_id=? ORDER BY id ASC", gachaID)
+	id, err := strconv.ParseInt(gachaID, 10, 64)
+	if err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+	gachaItemList, err := h.getGachaItemMasters(id)
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
@@ -1307,12 +1437,8 @@ func (h *Handler) drawGacha(c echo.Context) error {
 	}
 
 	// ガチャ提供割合(weight)の合計値を算出
-	var sum int64
-	err = h.db(userID).Get(&sum, "SELECT SUM(weight) FROM gacha_item_masters WHERE gacha_id=?", gachaID)
+	sum, err := h.getWeightSumOfGachaItemMasters(id)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return errorResponse(c, http.StatusNotFound, err)
-		}
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
@@ -1350,12 +1476,11 @@ func (h *Handler) drawGacha(c echo.Context) error {
 			CreatedAt:      requestAt,
 			UpdatedAt:      requestAt,
 		}
-		query = "INSERT INTO user_presents(id, user_id, sent_at, item_type, item_id, amount, present_message, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-		if _, err := tx.Exec(query, present.ID, present.UserID, present.SentAt, present.ItemType, present.ItemID, present.Amount, present.PresentMessage, present.CreatedAt, present.UpdatedAt); err != nil {
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
 
 		presents = append(presents, present)
+	}
+	if err := bulkInsertUserPresents(tx, presents); err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
 	query = "UPDATE users SET isu_coin=? WHERE id=?"
