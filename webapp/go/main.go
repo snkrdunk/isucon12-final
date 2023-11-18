@@ -55,8 +55,9 @@ const (
 )
 
 type Handler struct {
-	DBs      []*sqlx.DB
-	Sessions sync.Map
+	DBs              []*sqlx.DB
+	Sessions         sync.Map
+	GachaItemMasters sync.Map
 }
 
 func (h *Handler) db(userID int64) *sqlx.DB {
@@ -147,6 +148,53 @@ func (h *Handler) getSessionByUserID(userID int64) (*Session, error) {
 	}
 	h.setSession(userSession.SessionID, userSession)
 	return userSession, nil
+}
+
+func (h *Handler) getGachaItemMasters(gachaID int64) ([]*GachaItemMaster, error) {
+	v, ok := h.GachaItemMasters.Load(gachaID)
+	if ok {
+		gachaItemMasters, ok := v.([]*GachaItemMaster)
+		if !ok {
+			return nil, nil
+		}
+		return gachaItemMasters, nil
+	}
+
+	query := "SELECT * FROM gacha_item_masters WHERE gacha_id=? ORDER BY id ASC"
+	gachaItemMasters := make([]*GachaItemMaster, 0)
+	if err := h.db(0).Select(&gachaItemMasters, query, gachaID); err != nil {
+		return nil, err
+	}
+	h.GachaItemMasters.Store(gachaID, gachaItemMasters)
+	return gachaItemMasters, nil
+}
+
+func (h *Handler) refreshGachaItemMasters() error {
+	query := "SELECT * FROM gacha_item_masters ORDER BY id ASC"
+	gachaItemMasters := make([]*GachaItemMaster, 0)
+	if err := h.db(0).Select(&gachaItemMasters, query); err != nil {
+		return err
+	}
+	gachaItemMasterMap := map[int64][]*GachaItemMaster{}
+	for _, v := range gachaItemMasters {
+		gachaItemMasterMap[v.GachaID] = append(gachaItemMasterMap[v.GachaID], v)
+	}
+	for k, v := range gachaItemMasterMap {
+		h.GachaItemMasters.Store(k, v)
+	}
+	return nil
+}
+
+func (h *Handler) getWeightSumOfGachaItemMasters(gachaID int64) (int64, error) {
+	gachaItemMasters, err := h.getGachaItemMasters(gachaID)
+	if err != nil {
+		return 0, err
+	}
+	var sum int
+	for _, v := range gachaItemMasters {
+		sum += v.Weight
+	}
+	return int64(sum), nil
 }
 
 type JSONSerializer struct{}
@@ -1252,10 +1300,8 @@ func (h *Handler) listGacha(c echo.Context) error {
 	}
 
 	gachaDataList := make([]*GachaData, 0)
-	query = "SELECT * FROM gacha_item_masters WHERE gacha_id=? ORDER BY id ASC"
 	for _, v := range gachaMasterList {
-		var gachaItem []*GachaItemMaster
-		err = h.db(userID).Select(&gachaItem, query, v.ID)
+		gachaItem, err := h.getGachaItemMasters(v.ID)
 		if err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
 		}
@@ -1378,8 +1424,11 @@ func (h *Handler) drawGacha(c echo.Context) error {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
-	gachaItemList := make([]*GachaItemMaster, 0)
-	err = h.db(userID).Select(&gachaItemList, "SELECT * FROM gacha_item_masters WHERE gacha_id=? ORDER BY id ASC", gachaID)
+	id, err := strconv.ParseInt(gachaID, 10, 64)
+	if err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+	gachaItemList, err := h.getGachaItemMasters(id)
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
@@ -1388,12 +1437,8 @@ func (h *Handler) drawGacha(c echo.Context) error {
 	}
 
 	// ガチャ提供割合(weight)の合計値を算出
-	var sum int64
-	err = h.db(userID).Get(&sum, "SELECT SUM(weight) FROM gacha_item_masters WHERE gacha_id=?", gachaID)
+	sum, err := h.getWeightSumOfGachaItemMasters(id)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return errorResponse(c, http.StatusNotFound, err)
-		}
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
