@@ -56,11 +56,12 @@ const (
 )
 
 type Handler struct {
-	DBs              []*sqlx.DB
-	Sessions         sync.Map
-	GachaItemMasters sync.Map
-	AllGachaMasters  sync.Map
-	GachaMasters     sync.Map
+	DBs               []*sqlx.DB
+	Sessions          sync.Map
+	GachaItemMasters  sync.Map
+	AllGachaMasters   sync.Map
+	GachaMasters      sync.Map
+	LoginBonusMasters sync.Map
 }
 
 func (h *Handler) db(userID int64) *sqlx.DB {
@@ -239,6 +240,27 @@ func (h *Handler) getGachaMaster(gachaID int64) (*GachaMaster, int, error) {
 	h.GachaMasters.Store(gachaID, gachaMaster)
 
 	return gachaMaster, 0, nil
+}
+
+func (h *Handler) getLoginBonusMasters(requestAt int64) ([]*LoginBonusMaster, error) {
+	v, ok := h.LoginBonusMasters.Load("key")
+	if ok {
+		return v.([]*LoginBonusMaster), nil
+	}
+
+	query := "SELECT * FROM login_bonus_masters WHERE start_at <= ? AND end_at >= ?"
+	loginBonuses := make([]*LoginBonusMaster, 0)
+	if err := h.db(0).Select(&loginBonuses, query, requestAt, requestAt); err != nil {
+		return nil, err
+	}
+
+	h.LoginBonusMasters.Store("key", loginBonuses)
+
+	return loginBonuses, nil
+}
+
+func (h *Handler) deleteLoginBonusMasters() {
+	h.LoginBonusMasters.Delete("key")
 }
 
 type JSONSerializer struct{}
@@ -563,9 +585,8 @@ func isCompleteTodayLogin(lastActivatedAt, requestAt time.Time) bool {
 
 // obtainLoginBonus ログインボーナス付与
 func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) ([]*UserLoginBonus, error) {
-	loginBonuses := make([]*LoginBonusMaster, 0)
-	query := "SELECT * FROM login_bonus_masters WHERE start_at <= ? AND end_at >= ?"
-	if err := tx.Select(&loginBonuses, query, requestAt, requestAt); err != nil {
+	loginBonuses, err := h.getLoginBonusMasters(requestAt)
+	if err != nil {
 		return nil, err
 	}
 
@@ -575,7 +596,7 @@ func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) (
 	for _, bonus := range loginBonuses {
 		initBonus := false
 		userBonus := new(UserLoginBonus)
-		query = "SELECT * FROM user_login_bonuses WHERE user_id=? AND login_bonus_id=?"
+		query := "SELECT * FROM user_login_bonuses WHERE user_id=? AND login_bonus_id=?"
 		if err := tx.Get(userBonus, query, userID, bonus.ID); err != nil {
 			if err != sql.ErrNoRows {
 				return nil, err

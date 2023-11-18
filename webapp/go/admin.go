@@ -432,6 +432,8 @@ func (h *Handler) adminUpdateMaster(c echo.Context) error {
 		if _, err = tx.NamedExec(query, data); err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
 		}
+
+		h.deleteLoginBonusMasters()
 	} else {
 		c.Logger().Debug("Skip Update Master: loginBonusMaster")
 	}
