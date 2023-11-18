@@ -199,6 +199,36 @@ func (h *Handler) getWeightSumOfGachaItemMasters(gachaID int64) (int64, error) {
 	return int64(sum), nil
 }
 
+var cacheVersionMaster sync.Map
+
+func (h *Handler) getVersionMaster() (*VersionMaster, int, error) {
+	v, ok := cacheVersionMaster.Load("key")
+	if ok {
+		return v.(*VersionMaster), 0, nil
+	}
+
+	query := "SELECT * FROM version_masters WHERE status=1"
+	versionMaster := new(VersionMaster)
+	if err := h.db(0).Get(versionMaster, query); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, http.StatusNotFound, fmt.Errorf("active master version is not found")
+		}
+		return nil, http.StatusInternalServerError, err
+	}
+
+	setVersionMaster(versionMaster)
+
+	return versionMaster, 0, nil
+}
+
+func setVersionMaster(versionMaster *VersionMaster) {
+	cacheVersionMaster.Store("key", versionMaster)
+}
+
+func deleteVersionMasterCache() {
+	cacheVersionMaster.Delete("key")
+}
+
 type JSONSerializer struct{}
 
 func (j *JSONSerializer) Serialize(c echo.Context, i interface{}, indent string) error {
@@ -346,15 +376,10 @@ func (h *Handler) apiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		// 有効なマスタデータか確認
-		query := "SELECT * FROM version_masters WHERE status=1"
-		masterVersion := new(VersionMaster)
-		if err := h.db(userID).Get(masterVersion, query); err != nil {
-			if err == sql.ErrNoRows {
-				return errorResponse(c, http.StatusNotFound, fmt.Errorf("active master version is not found"))
-			}
-			return errorResponse(c, http.StatusInternalServerError, err)
+		masterVersion, status, err := h.getVersionMaster()
+		if err != nil {
+			return errorResponse(c, status, err)
 		}
-
 		if masterVersion.MasterVersion != c.Request().Header.Get("x-master-version") {
 			return errorResponse(c, http.StatusUnprocessableEntity, ErrInvalidMasterVersion)
 		}
@@ -969,6 +994,8 @@ func (h *Handler) obtainItemBulk(tx *sqlx.Tx, userID int64, presents []*UserPres
 // initialize 初期化処理
 // POST /initialize
 func initialize(c echo.Context) error {
+	deleteVersionMasterCache()
+
 	var eg errgroup.Group
 	for i := range mysqlHosts {
 		i := i

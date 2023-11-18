@@ -474,6 +474,7 @@ func (h *Handler) adminUpdateMaster(c echo.Context) error {
 	if err = tx.Get(activeMaster, "SELECT * FROM version_masters WHERE status=1"); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
+	setVersionMaster(activeMaster)
 
 	err = tx.Commit()
 	if err != nil {
