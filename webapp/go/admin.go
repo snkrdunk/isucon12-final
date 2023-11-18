@@ -474,6 +474,7 @@ func (h *Handler) adminUpdateMaster(c echo.Context) error {
 	if err = tx.Get(activeMaster, "SELECT * FROM version_masters WHERE status=1"); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
+	setVersionMaster(activeMaster)
 
 	err = tx.Commit()
 	if err != nil {
@@ -626,6 +627,8 @@ func (h *Handler) adminBanUser(c echo.Context) error {
 	if _, err = h.db(userID).Exec(query, banID, userID, requestAt, requestAt, requestAt); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
+
+	bannedUserIDs.Store(userID, true)
 
 	return successResponse(c, &AdminBanUserResponse{
 		User: user,
