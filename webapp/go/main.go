@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -54,11 +55,98 @@ const (
 )
 
 type Handler struct {
-	DBs []*sqlx.DB
+	DBs      []*sqlx.DB
+	Sessions sync.Map
 }
 
-func (h Handler) db(userID int64) *sqlx.DB {
+func (h *Handler) db(userID int64) *sqlx.DB {
 	return h.DBs[int(userID)%len(h.DBs)]
+}
+
+func (h *Handler) getSession(sessID string) (*Session, error) {
+	v, ok := h.Sessions.Load(sessID)
+	if !ok {
+		query := "SELECT * FROM user_sessions WHERE session_id=? AND deleted_at IS NULL"
+		userSession := new(Session)
+		var eg errgroup.Group
+		for _, db := range h.DBs {
+			db := db
+			eg.Go(func() error {
+				userSessionTmp := new(Session)
+				if err := db.Get(userSessionTmp, query, sessID); err != nil && err != sql.ErrNoRows {
+					return err
+				}
+				if userSessionTmp.ID > 0 {
+					userSession = userSessionTmp
+				}
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
+		if userSession.ID == 0 {
+			return nil, nil
+		}
+		h.setSession(sessID, userSession)
+		return userSession, nil
+	}
+	session, ok := v.(*Session)
+	if !ok {
+		return nil, nil
+	}
+	return session, nil
+}
+
+func (h *Handler) setSession(sessID string, session *Session) {
+	h.Sessions.Store(sessID, session)
+}
+
+func (h *Handler) deleteSession(sessID string) {
+	h.Sessions.Delete(sessID)
+}
+
+func (h *Handler) getSessionByUserID(userID int64) (*Session, error) {
+	var session *Session
+	h.Sessions.Range(func(key, value any) bool {
+		v, ok := value.(*Session)
+		if !ok {
+			return true
+		}
+		if v.UserID != userID {
+			return true
+		}
+		session = v
+		return false
+	})
+	if session != nil {
+		return session, nil
+	}
+
+	userSession := new(Session)
+	query := "SELECT * FROM user_sessions WHERE user_id=? AND deleted_at IS NULL"
+	var eg errgroup.Group
+	for _, db := range h.DBs {
+		db := db
+		eg.Go(func() error {
+			userSessionTmp := new(Session)
+			if err := db.Get(userSessionTmp, query, userID); err != nil && err != sql.ErrNoRows {
+				return err
+			}
+			if userSessionTmp.ID > 0 {
+				userSession = userSessionTmp
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	if userSession.ID == 0 {
+		return nil, nil
+	}
+	h.setSession(userSession.SessionID, userSession)
+	return userSession, nil
 }
 
 type JSONSerializer struct{}
@@ -245,40 +333,20 @@ func (h *Handler) checkSessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc
 			return errorResponse(c, http.StatusInternalServerError, ErrGetRequestTime)
 		}
 
-		query := "SELECT * FROM user_sessions WHERE session_id=? AND deleted_at IS NULL"
-		userSession := new(Session)
-		var eg errgroup.Group
-		for _, db := range h.DBs {
-			db := db
-			eg.Go(func() error {
-				userSessionTmp := new(Session)
-				if err := db.Get(userSessionTmp, query, sessID); err != nil && err != sql.ErrNoRows {
-					return err
-				}
-				if userSessionTmp.ID > 0 {
-					userSession = userSessionTmp
-				}
-				return nil
-			})
-		}
-		if err := eg.Wait(); err != nil {
+		userSession, err := h.getSession(sessID)
+		if err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
 		}
-
-		if userSession.ID == 0 {
+		if userSession == nil {
 			return errorResponse(c, http.StatusUnauthorized, ErrUnauthorized)
 		}
-
 		if userSession.UserID != userID {
 			return errorResponse(c, http.StatusForbidden, ErrForbidden)
 		}
 
 		// 期限切れチェック
 		if userSession.ExpiredAt < requestAt {
-			query = "UPDATE user_sessions SET deleted_at=? WHERE session_id=?"
-			if _, err = h.db(userID).Exec(query, requestAt, sessID); err != nil {
-				return errorResponse(c, http.StatusInternalServerError, err)
-			}
+			h.deleteSession(sessID)
 			return errorResponse(c, http.StatusUnauthorized, ErrExpiredSession)
 		}
 
@@ -997,10 +1065,7 @@ func (h *Handler) createUser(c echo.Context) error {
 		UpdatedAt: requestAt,
 		ExpiredAt: requestAt + 86400,
 	}
-	query = "INSERT INTO user_sessions(id, user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?)"
-	if _, err = tx.Exec(query, sess.ID, sess.UserID, sess.SessionID, sess.CreatedAt, sess.UpdatedAt, sess.ExpiredAt); err != nil {
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
+	h.setSession(sess.SessionID, sess)
 
 	err = tx.Commit()
 	if err != nil {
@@ -1074,29 +1139,20 @@ func (h *Handler) login(c echo.Context) error {
 	defer tx.Rollback() //nolint:errcheck
 
 	var sessionID string
-	userSession := new(Session)
-	query = "SELECT * FROM user_sessions WHERE user_id=? AND deleted_at IS NULL"
-	if err := h.db(user.ID).Get(userSession, query, user.ID); err != nil {
-		if err != sql.ErrNoRows {
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
+	userSession, err := h.getSessionByUserID(user.ID)
+	if err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
 	}
-	if userSession.ID != 0 {
-		if userSession.UserID != user.ID {
-			return errorResponse(c, http.StatusForbidden, ErrForbidden)
-		}
+	if userSession != nil && userSession.UserID != user.ID {
+		return errorResponse(c, http.StatusForbidden, ErrForbidden)
 	}
 
 	// NOTE: セッションの有効期限切れチェック
-	if userSession.ExpiredAt > requestAt {
+	if userSession != nil && userSession.ExpiredAt > requestAt {
 		sessionID = userSession.SessionID
 	}
 
 	if sessionID == "" {
-		query = "UPDATE user_sessions SET deleted_at=? WHERE user_id=? AND deleted_at IS NULL"
-		if _, err = tx.Exec(query, requestAt, req.UserID); err != nil {
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
 		sessID, err := generateUUID()
 		if err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
@@ -1110,10 +1166,7 @@ func (h *Handler) login(c echo.Context) error {
 			UpdatedAt: requestAt,
 			ExpiredAt: requestAt + 86400,
 		}
-		query = "INSERT INTO user_sessions(id, user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?)"
-		if _, err = tx.Exec(query, sess.ID, sess.UserID, sess.SessionID, sess.CreatedAt, sess.UpdatedAt, sess.ExpiredAt); err != nil {
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
+		h.setSession(sessID, sess)
 	}
 
 	// 同日にすでにログインしているユーザはログイン処理をしない
