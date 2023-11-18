@@ -245,16 +245,26 @@ func (h *Handler) checkSessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc
 			return errorResponse(c, http.StatusInternalServerError, ErrGetRequestTime)
 		}
 
-		userSession := new(Session)
 		query := "SELECT * FROM user_sessions WHERE session_id=? AND deleted_at IS NULL"
+		userSession := new(Session)
+		var eg errgroup.Group
 		for _, db := range h.DBs {
-			if err := db.Get(userSession, query, sessID); err != nil && err != sql.ErrNoRows {
-				return errorResponse(c, http.StatusInternalServerError, err)
-			}
-			if userSession.ID > 0 {
-				break
-			}
+			db := db
+			eg.Go(func() error {
+				userSessionTmp := new(Session)
+				if err := db.Get(userSessionTmp, query, sessID); err != nil && err != sql.ErrNoRows {
+					return err
+				}
+				if userSessionTmp.ID > 0 {
+					userSession = userSessionTmp
+				}
+				return nil
+			})
 		}
+		if err := eg.Wait(); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+
 		if userSession.ID == 0 {
 			return errorResponse(c, http.StatusUnauthorized, ErrUnauthorized)
 		}
@@ -499,7 +509,7 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 	}
 
 	userPresents := make([]*UserPresent, 0, len(normalPresents))
-	UserPresentAllReceivedHistories := make([]*UserPresentAllReceivedHistory, 0, len(normalPresents))
+	userPresentAllReceivedHistories := make([]*UserPresentAllReceivedHistory, 0, len(normalPresents))
 	for _, np := range normalPresents {
 		if isReceived(receivedHistories, np.ID) {
 			continue
@@ -526,7 +536,7 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 			CreatedAt:    requestAt,
 			UpdatedAt:    requestAt,
 		}
-		UserPresentAllReceivedHistories = append(UserPresentAllReceivedHistories, history)
+		userPresentAllReceivedHistories = append(userPresentAllReceivedHistories, history)
 	}
 
 	// NOTE: user_presents
@@ -535,7 +545,7 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 	}
 
 	// NOTE: user_present_all_received_history
-	if err := bulkInsertUserPresentHistories(tx, UserPresentAllReceivedHistories); err != nil {
+	if err := bulkInsertUserPresentHistories(tx, userPresentAllReceivedHistories); err != nil {
 		return nil, err
 	}
 
