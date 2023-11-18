@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/kaz/pprotein/integration/echov4"
@@ -63,6 +63,31 @@ func (h Handler) db(userID int64) *sqlx.DB {
 	return h.DBs[int(userID)%len(h.DBs)]
 }
 
+type JSONSerializer struct{}
+
+func (j *JSONSerializer) Serialize(c echo.Context, i interface{}, indent string) error {
+	return json.NewEncoder(c.Response()).Encode(i)
+}
+
+func (j *JSONSerializer) Deserialize(c echo.Context, i interface{}) error {
+	err := json.NewDecoder(c.Request().Body).Decode(i)
+	if ute, ok := err.(*json.UnmarshalTypeError); ok {
+		return echo.NewHTTPError(
+			http.StatusBadRequest,
+			fmt.Sprintf(
+				"Unmarshal type error: expected=%v, got=%v, field=%v, offset=%v",
+				ute.Type, ute.Value, ute.Field, ute.Offset),
+		).SetInternal(err)
+	} else if se, ok := err.(*json.SyntaxError); ok {
+		return echo.NewHTTPError(
+			http.StatusBadRequest,
+			fmt.Sprintf("Syntax error: offset=%v, error=%v",
+				se.Offset, se.Error()),
+		).SetInternal(err)
+	}
+	return err
+}
+
 func main() {
 	runtime.SetBlockProfileRate(1)
 	runtime.SetMutexProfileFraction(1)
@@ -74,6 +99,7 @@ func main() {
 	time.Local = time.FixedZone("Local", 9*60*60)
 
 	e := echo.New()
+	e.JSONSerializer = &JSONSerializer{}
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
