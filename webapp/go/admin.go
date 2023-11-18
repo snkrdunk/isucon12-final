@@ -627,6 +627,8 @@ func (h *Handler) adminBanUser(c echo.Context) error {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
+	bannedUserIDs.Store(userID, true)
+
 	return successResponse(c, &AdminBanUserResponse{
 		User: user,
 	})

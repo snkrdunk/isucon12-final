@@ -54,6 +54,8 @@ const (
 	SQLDirectory string = "../sql/"
 )
 
+var dbForInitialize *sqlx.DB
+
 type Handler struct {
 	DBs              []*sqlx.DB
 	Sessions         sync.Map
@@ -245,6 +247,7 @@ func main() {
 		dbs[i] = db
 		defer db.Close()
 	}
+	dbForInitialize = dbs[0]
 
 	e.Server.Addr = fmt.Sprintf(":%v", "8080")
 	h := &Handler{
@@ -447,17 +450,19 @@ func (h *Handler) checkViewerID(userID int64, viewerID string) error {
 	return nil
 }
 
+var bannedUserIDs sync.Map
+
 // checkBan BANされているユーザでかを確認する
 func (h *Handler) checkBan(userID int64) (bool, error) {
-	banUser := new(UserBan)
-	query := "SELECT * FROM user_bans WHERE user_id=?"
-	if err := h.db(userID).Get(banUser, query, userID); err != nil {
-		if err == sql.ErrNoRows {
-			return false, nil
-		}
-		return false, err
+	v, ok := bannedUserIDs.Load(userID)
+	if !ok {
+		return false, nil
 	}
-	return true, nil
+	banned, ok := v.(bool)
+	if !ok {
+		return false, nil
+	}
+	return banned, nil
 }
 
 // getRequestTime リクエストを受けた時間をコンテキストからunix timeで取得する
@@ -981,6 +986,19 @@ func initialize(c echo.Context) error {
 	}
 	if err := eg.Wait(); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+
+	bannedUserIDs.Range(func(key, value any) bool {
+		bannedUserIDs.Delete(key)
+		return true
+	})
+	query := "SELECT * FROM user_bans"
+	userBans := make([]*UserBan, 0)
+	if err := dbForInitialize.Select(&userBans, query); err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+	for _, userBan := range userBans {
+		bannedUserIDs.Store(userBan.UserID, true)
 	}
 
 	return successResponse(c, &InitializeResponse{
