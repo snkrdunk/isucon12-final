@@ -9,4 +9,5 @@
     backup: true
   notify: restart_mysql
   with_items:
+    - etc/systemd/system/mysql.service
     - etc/mysql/mysql.conf.d/mysqld.cnf
