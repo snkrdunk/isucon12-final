@@ -134,23 +134,6 @@ CREATE TABLE `user_present_all_received_history` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
-CREATE TABLE `user_presents` (
-  `id` bigint NOT NULL,
-  `user_id` bigint NOT NULL comment 'ユーザID',
-  `sent_at` bigint NOT NULL comment 'プレゼント送付日時',
-  `item_type` int(1) NOT NULL comment 'アイテム種別',
-  `item_id` int NOT NULL comment 'アイテムID',
-  `amount` int NOT NULL comment 'アイテム数',
-  `present_message` varchar(255) comment 'プレゼントメッセージ',
-  `created_at` bigint NOT NULL,
-  `updated_at`bigint NOT NULL,
-  `deleted_at` bigint default NULL,
-   PRIMARY KEY (`id`),
-   INDEX userid_idx (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
-CREATE INDEX idx_user_presents_user_id_deleted_at_created_at ON user_presents (user_id, deleted_at, created_at);
-
 -- CREATE TABLE `user_presents` (
 --   `id` bigint NOT NULL,
 --   `user_id` bigint NOT NULL comment 'ユーザID',
@@ -162,9 +145,25 @@ CREATE INDEX idx_user_presents_user_id_deleted_at_created_at ON user_presents (u
 --   `created_at` bigint NOT NULL,
 --   `updated_at`bigint NOT NULL,
 --   `deleted_at` bigint default NULL,
---   PRIMARY KEY (`user_id`, `id`)
--- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin
--- PARTITION BY HASH  (user_id) PARTITIONS 8;
+--    PRIMARY KEY (`id`),
+--    INDEX userid_idx (`user_id`)
+-- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+-- CREATE INDEX idx_user_presents_user_id_deleted_at_created_at ON user_presents (user_id, deleted_at, created_at);
+
+CREATE TABLE `user_presents` (
+  `id` bigint NOT NULL,
+  `user_id` bigint NOT NULL comment 'ユーザID',
+  `sent_at` bigint NOT NULL comment 'プレゼント送付日時',
+  `item_type` int(1) NOT NULL comment 'アイテム種別',
+  `item_id` int NOT NULL comment 'アイテムID',
+  `amount` int NOT NULL comment 'アイテム数',
+  `present_message` varchar(255) comment 'プレゼントメッセージ',
+  `created_at` bigint NOT NULL,
+  `updated_at`bigint NOT NULL,
+  `deleted_at` bigint default NULL,
+  PRIMARY KEY (`user_id`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin
+PARTITION BY HASH  (user_id) PARTITIONS 8;
 
 /* ガチャマスタ */
 

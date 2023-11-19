@@ -23,6 +23,7 @@
     group: isucon
     mode: 0644
   with_fileglob:
+    - "../webapp/sql/setup/1_schema.sql"
     - "../webapp/sql/3_schema_exclude_user_presents.sql"
     - "../webapp/sql/4_alldata_exclude_user_presents*"
     - "../webapp/sql/5_user_presents_not_receive_data*"

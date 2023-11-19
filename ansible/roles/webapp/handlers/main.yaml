@@ -1,6 +1,7 @@
 - name: Restart webapp
   become: true
-  service:
+  systemd:
     name: isuconquest.go
     state: restarted
+    daemon_reload: true
   listen: restart_webapp
