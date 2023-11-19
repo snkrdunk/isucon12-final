@@ -55,6 +55,11 @@ const (
 	PresentCountPerPage int = 100
 
 	SQLDirectory string = "../sql/"
+
+	MaxOpenConns    int           = 151
+	MaxIdelConns    int           = 151
+	ConnMaxLifefime time.Duration = 0
+	ConnMaxIdleTime time.Duration = 0
 )
 
 type Handler struct {
@@ -149,6 +154,10 @@ func connectDB(host string, batch bool) (*sqlx.DB, error) {
 		batch,
 	)
 	dbx, err := sqlx.Open("mysql", dsn)
+	dbx.SetMaxOpenConns(MaxOpenConns)
+	dbx.SetMaxIdleConns(MaxIdelConns)
+	dbx.SetConnMaxLifetime(ConnMaxLifefime)
+	dbx.SetConnMaxIdleTime(ConnMaxIdleTime)
 	if err != nil {
 		return nil, err
 	}
