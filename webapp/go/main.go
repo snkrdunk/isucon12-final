@@ -29,6 +29,8 @@ import (
 var mysqlHosts = []string{
 	"192.168.0.12",
 	"192.168.0.13",
+	"192.168.0.14",
+	"192.168.0.15",
 }
 
 var (
@@ -969,6 +971,7 @@ func (h *Handler) createUser(c echo.Context) error {
 		UpdatedAt: requestAt,
 		ExpiredAt: requestAt + 86400,
 	}
+
 	query = "INSERT INTO user_sessions(id, user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?)"
 	if _, err = tx.Exec(query, sess.ID, sess.UserID, sess.SessionID, sess.CreatedAt, sess.UpdatedAt, sess.ExpiredAt); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
