@@ -12,6 +12,14 @@ all:
       hosts:
         webapp01:
           ansible_host: 57.180.171.204
+        webapp02:
+          ansible_host: 52.69.223.204
+        webapp03:
+          ansible_host: 52.198.28.166
+        webapp04:
+          ansible_host: 57.180.85.171
+        webapp05:
+          ansible_host: 13.113.117.211
     db:
       hosts:
         db02:
