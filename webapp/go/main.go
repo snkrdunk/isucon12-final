@@ -56,12 +56,9 @@ const (
 )
 
 type Handler struct {
-	DBs               []*sqlx.DB
-	Sessions          sync.Map
-	GachaItemMasters  sync.Map
-	AllGachaMasters   sync.Map
-	GachaMasters      sync.Map
-	LoginBonusMasters sync.Map
+	DBs              []*sqlx.DB
+	Sessions         sync.Map
+	GachaItemMasters sync.Map
 }
 
 func (h *Handler) db(userID int64) *sqlx.DB {
@@ -199,68 +196,6 @@ func (h *Handler) getWeightSumOfGachaItemMasters(gachaID int64) (int64, error) {
 		sum += v.Weight
 	}
 	return int64(sum), nil
-}
-
-func (h *Handler) getAllGachaMasters(requestAt int64) ([]*GachaMaster, error) {
-	v, ok := h.AllGachaMasters.Load("key")
-	if ok {
-		return v.([]*GachaMaster), nil
-	}
-
-	query := "SELECT * FROM gacha_masters WHERE start_at <= ? AND end_at >= ? ORDER BY display_order ASC"
-	gachaMasters := []*GachaMaster{}
-	if err := h.db(0).Select(&gachaMasters, query, requestAt, requestAt); err != nil {
-		return nil, err
-	}
-
-	h.AllGachaMasters.Store("key", gachaMasters)
-
-	return gachaMasters, nil
-}
-
-func (h *Handler) deleteAllGachaMasters() {
-	h.AllGachaMasters.Delete("key")
-}
-
-func (h *Handler) getGachaMaster(gachaID int64) (*GachaMaster, int, error) {
-	v, ok := h.GachaMasters.Load(gachaID)
-	if ok {
-		return v.(*GachaMaster), 0, nil
-	}
-
-	query := "SELECT * FROM gacha_masters WHERE id=?"
-	gachaMaster := new(GachaMaster)
-	if err := h.db(0).Get(gachaMaster, query, gachaID); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, http.StatusNotFound, fmt.Errorf("not found gacha")
-		}
-		return nil, http.StatusInternalServerError, err
-	}
-
-	h.GachaMasters.Store(gachaID, gachaMaster)
-
-	return gachaMaster, 0, nil
-}
-
-func (h *Handler) getLoginBonusMasters(requestAt int64) ([]*LoginBonusMaster, error) {
-	v, ok := h.LoginBonusMasters.Load("key")
-	if ok {
-		return v.([]*LoginBonusMaster), nil
-	}
-
-	query := "SELECT * FROM login_bonus_masters WHERE start_at <= ? AND end_at >= ?"
-	loginBonuses := make([]*LoginBonusMaster, 0)
-	if err := h.db(0).Select(&loginBonuses, query, requestAt, requestAt); err != nil {
-		return nil, err
-	}
-
-	h.LoginBonusMasters.Store("key", loginBonuses)
-
-	return loginBonuses, nil
-}
-
-func (h *Handler) deleteLoginBonusMasters() {
-	h.LoginBonusMasters.Delete("key")
 }
 
 type JSONSerializer struct{}
@@ -585,8 +520,9 @@ func isCompleteTodayLogin(lastActivatedAt, requestAt time.Time) bool {
 
 // obtainLoginBonus ログインボーナス付与
 func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) ([]*UserLoginBonus, error) {
-	loginBonuses, err := h.getLoginBonusMasters(requestAt)
-	if err != nil {
+	loginBonuses := make([]*LoginBonusMaster, 0)
+	query := "SELECT * FROM login_bonus_masters WHERE start_at <= ? AND end_at >= ?"
+	if err := tx.Select(&loginBonuses, query, requestAt, requestAt); err != nil {
 		return nil, err
 	}
 
@@ -596,7 +532,7 @@ func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) (
 	for _, bonus := range loginBonuses {
 		initBonus := false
 		userBonus := new(UserLoginBonus)
-		query := "SELECT * FROM user_login_bonuses WHERE user_id=? AND login_bonus_id=?"
+		query = "SELECT * FROM user_login_bonuses WHERE user_id=? AND login_bonus_id=?"
 		if err := tx.Get(userBonus, query, userID, bonus.ID); err != nil {
 			if err != sql.ErrNoRows {
 				return nil, err
@@ -1351,7 +1287,9 @@ func (h *Handler) listGacha(c echo.Context) error {
 		return errorResponse(c, http.StatusInternalServerError, ErrGetRequestTime)
 	}
 
-	gachaMasterList, err := h.getAllGachaMasters(requestAt)
+	gachaMasterList := []*GachaMaster{}
+	query := "SELECT * FROM gacha_masters WHERE start_at <= ? AND end_at >= ? ORDER BY display_order ASC"
+	err = h.db(userID).Select(&gachaMasterList, query, requestAt, requestAt)
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
@@ -1380,7 +1318,7 @@ func (h *Handler) listGacha(c echo.Context) error {
 	}
 
 	// ガチャ実行用のワンタイムトークンの発行
-	query := "UPDATE user_one_time_tokens SET deleted_at=? WHERE user_id=? AND deleted_at IS NULL"
+	query = "UPDATE user_one_time_tokens SET deleted_at=? WHERE user_id=? AND deleted_at IS NULL"
 	if _, err = h.db(userID).Exec(query, requestAt, userID); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
@@ -1478,15 +1416,19 @@ func (h *Handler) drawGacha(c echo.Context) error {
 		return errorResponse(c, http.StatusConflict, fmt.Errorf("not enough isucon"))
 	}
 
+	query = "SELECT * FROM gacha_masters WHERE id=? AND start_at <= ? AND end_at >= ?"
+	gachaInfo := new(GachaMaster)
+	if err = h.db(userID).Get(gachaInfo, query, gachaID, requestAt, requestAt); err != nil {
+		if sql.ErrNoRows == err {
+			return errorResponse(c, http.StatusNotFound, fmt.Errorf("not found gacha"))
+		}
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+
 	id, err := strconv.ParseInt(gachaID, 10, 64)
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
-	gachaInfo, status, err := h.getGachaMaster(id)
-	if err != nil {
-		return errorResponse(c, status, err)
-	}
-
 	gachaItemList, err := h.getGachaItemMasters(id)
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
